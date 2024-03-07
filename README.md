@@ -78,7 +78,7 @@ $ bq query --use_legacy_sql=false "SELECT * FROM \`${PROJECT_ID}.${BQ_DATASET}.$
 
 ## Accessing the data in Looker
 
-In order to see the data in cleartext in Looker, you need to use the AEAD functions from BigQuery in the dimension definition. Before you do that, store the KEK uri and the wrapped key contents (as bytes) as constants in your `manifest.lkml`.
+In order to see the data in cleartext in Looker, you need to use the [AEAD functions](https://cloud.google.com/bigquery/docs/reference/standard-sql/aead_encryption_functions) from BigQuery in the dimension definition. Before you do that, store the KEK uri and the wrapped key contents (as bytes) as constants in your `manifest.lkml`.
 
 ```lookml
 constant: key_resource_uri {
