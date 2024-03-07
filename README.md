@@ -1,6 +1,6 @@
 # BQ Column Level Encryption and Looker
 
-This repository is intended as an example of how to encrypt sensitive data in BigQuery and use it in Looker.
+This repository is intended as an example of how to encrypt sensitive data in BigQuery and use it in Looker. For more information have a look at the [official documentation](https://cloud.google.com/bigquery/docs/column-key-encrypt).
 
 ## Terminology
 
