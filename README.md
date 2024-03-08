@@ -16,10 +16,13 @@ Assuming that you have the correct set of permissions, you can create a key-ring
 
 ```shell
 REGION=...
-KEYRING=...
+KEY_RING=...
 KEY_NAME=...
-gcloud kms keyrings create $KEYRING --location=$REGION
-gcloud kms keys create $KEY_NAME --location=$REGION --keyring=$KEYRING --purpose=encryption
+gcloud kms keyrings create $KEY_RING --location=$REGION
+gcloud kms keys create $KEY_NAME \
+    --location=$REGION \
+    --keyring=$KEY_RING \
+    --purpose=encryption
 ```
 
 ## Generating the wrapped key
@@ -27,7 +30,10 @@ gcloud kms keys create $KEY_NAME --location=$REGION --keyring=$KEYRING --purpose
 There are multiple ways of doing this, but we'll use the `tinkey` utility for that. Follow the instructions [here](https://developers.google.com/tink/install-tinkey) to install it. Once it's installed run the following command to generate the wrapped key. This is a one-off process.
 
 ```shell
-KEK_URI=`gcloud kms keys describe --location=$REGION --keyring=$KEYRING $KEYNAME --format="value(name)"`
+KEK_URI=`gcloud kms keys describe \
+    --location=$REGION \
+    --keyring=$KEY_RING $KEY_NAME \
+    --format="value(name)"`
 tinkey create-keyset \
     --key-template AES256_SIV \
     --out-format json \
@@ -89,7 +95,9 @@ constant: wrapped_key {
 }
 ```
 
-Once these have been defined, in your `view` file, you can reference them (note that we're passing the wrapped key content as a byte literal to BigQuery, hence the `b` prefix before the reference to the wrapped key):
+Once these have been defined, you can reference them in your `view` file.
+
+> **Note** We're passing the wrapped key content as a byte literal to BigQuery, hence the `b` prefix before the reference to the wrapped key.
 
 ```lookml
 dimension: name {
