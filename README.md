@@ -116,4 +116,6 @@ dimension: name {
 
 Make sure that the Looker service account that's accessing BigQuery has the _Cloud KMS CryptoKey Decrypter Via Delegation_ role.
 
-Now when the contents for the `name` column are displayed, the data will be decrypted using the wrapped key and the KEK.
+Now when the contents for the `name` column are displayed, the data will be automatically decrypted using the wrapped key and the KEK.
+
+![Decrypted data in Looker](looker-decrypted-data.png)
