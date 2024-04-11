@@ -86,6 +86,16 @@ $ bq query --use_legacy_sql=false "SELECT * FROM \`${PROJECT_ID}.${BQ_DATASET}.$
 
 In order to see the data in cleartext in Looker, you need to use the [AEAD functions](https://cloud.google.com/bigquery/docs/reference/standard-sql/aead_encryption_functions) from BigQuery in the dimension definition. Before you do that, store the KEK uri and the wrapped key contents (as bytes) as constants in your `manifest.lkml`.
 
+In order to get the wrapped key contents as bytes you could use the following commands:
+
+```shell
+KEYSET_B64=`jq -r .encryptedKeyset wrapped_key.json`
+bq query --use_legacy_sql=false --format=json "SELECT FORMAT('%T', FROM_BASE64('$KEYSET_B64')) AS key_literal" | \
+    jq -r .[0].key_literal
+```
+
+Once you have the wrapped key as bytes literal you can store it (without the `b` prefix) as a constant.
+
 ```lookml
 constant: key_resource_uri {
   value: "gcp-kms://projects/.../locations/.../keyRings/.../cryptoKeys/..."
