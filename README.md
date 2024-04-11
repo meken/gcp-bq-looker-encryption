@@ -86,6 +86,7 @@ $ bq query --use_legacy_sql=false "SELECT * FROM \`${PROJECT_ID}.${BQ_DATASET}.$
 
 In order to see the data in cleartext in Looker, you need to use the [AEAD functions](https://cloud.google.com/bigquery/docs/reference/standard-sql/aead_encryption_functions) from BigQuery in the dimension definition. Before you do that, store the KEK uri and the wrapped key contents (as bytes) as constants in your `manifest.lkml`.
 
+### Extracting the wrapped key contents as a byte literal
 In order to get the wrapped key contents as bytes you could use the following commands:
 
 ```shell
@@ -129,3 +130,50 @@ Make sure that the Looker service account that's accessing BigQuery has the _Clo
 Now when the contents for the `name` column are displayed, the data will be automatically decrypted using the wrapped key and the KEK.
 
 ![Decrypted data in Looker](looker-decrypted-data.png)
+
+## Rotating the keys
+
+For symmetric encryption, periodically and automatically rotating keys is a recommended and in some cases even required security practice. Since we're using wrapped keys, this process involves rotating both the KEK and the wrapped key.
+
+### Rotate the KEK 
+
+```shell
+gcloud kms keys versions create \
+    --key=$KEY_NAME \
+    --keyring=$KEY_RING \
+    --location=$REGION \
+    --primary
+```
+
+### Rotate the wrapped key
+
+```shell
+tinkey rotate-keyset \
+    --key-template AES256_SIV \
+    --in-format json \
+    --in wrapped_key.json \
+    --out-format json \
+    --out rotated_wrapped_key.json \
+    --master-key-uri "$KEK_URI"
+```
+
+You can now extract the rotated & wrapped key as described in section [extracting the wrapped key](#extracting-the-wrapped-key-contents-as-a-byte-literal).
+
+### Re-encrypt the data
+
+There are multiple methods to re-encrypt the data, varying from running the encryption code with the new key on the original data, to decrypting with the old key and re-encrypting with the new key as the rotating the key keeps a reference to the old key (until the old one is disabled/destroyed). The snippet below is an example of how to do this in BigQuery with SQL.
+
+```sql
+DECLARE kek_resource_uri STRING;
+DECLARE wrapped_key_bytes BYTES;
+DECLARE encrypted_content BYTES;
+SET kek_resource_uri = "gcp-kms://projects/.../locations/.../keyRings/.../cryptoKeys/...";
+SET wrapped_key_bytes = FROM_BASE64("....");  -- or the bytes literal as used in Looker
+
+UPDATE `$BQ_DATASET.$BQ_TABLE` SET name = DETERMINISTIC_ENCRYPT(
+            KEYS.KEYSET_CHAIN(kek_resource_uri, wrapped_key_bytes), 
+            DETERMINISTIC_DECRYPT_STRING(KEYS.KEYSET_CHAIN(kek_resource_uri, wrapped_key_bytes), name, ''), 
+            ''
+        )
+WHERE 1=1;
+```
