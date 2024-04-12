@@ -29,7 +29,7 @@ gcloud kms keys create $KEY_NAME \
 
 There are multiple ways of doing this, but we'll use the `tinkey` utility. Follow the instructions [here](https://developers.google.com/tink/install-tinkey) to install it. Once it's installed run the following command to generate the wrapped key. This is typically a one-off process.
 
-> **Note**  Although generating the wrapped key is a one-off process, uou might need to rotate it to improve your security, see section [Rotating keys](#rotating_keys) below for detailed instructions on that.
+> **Note**  Although generating the wrapped key is a one-off process, you might need to rotate it to improve your security, see section [Rotating keys](#rotating-the-keys) below for detailed instructions on that.
 
 ```shell
 KEK_URI=`gcloud kms keys describe \
@@ -71,7 +71,7 @@ python encrypt.py \
     --kek-uri=$KEK_URI
 ```
 
-In order to view the encrypted data you can run a SQL query:
+You can now view the encrypted data using the following SQL query:
 
 ```shell
 $ bq query --use_legacy_sql=false "SELECT * FROM \`${PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\`"
@@ -88,8 +88,9 @@ $ bq query --use_legacy_sql=false "SELECT * FROM \`${PROJECT_ID}.${BQ_DATASET}.$
 
 In order to see the data in cleartext in Looker, you need to use the [AEAD functions](https://cloud.google.com/bigquery/docs/reference/standard-sql/aead_encryption_functions) from BigQuery in the dimension definition. Before you do that, store the KEK uri and the wrapped key contents (as bytes) as constants in your `manifest.lkml`.
 
-### Extracting the wrapped key contents as a byte literal
-In order to get the wrapped key contents as bytes you could use the following commands:
+### Extracting the wrapped key contents as a bytes literal
+
+To extract the wrapped key contents as a bytes literal you could use the following commands:
 
 ```shell
 KEYSET_B64=`jq -r .encryptedKeyset wrapped_key.json`
@@ -97,7 +98,9 @@ bq query --use_legacy_sql=false --format=json "SELECT FORMAT('%T', FROM_BASE64('
     jq -r .[0].key_literal
 ```
 
-Once you have the wrapped key as bytes literal you can store it (without the `b` prefix) as a constant.
+### Storing the wrapped key contents as a constant in Looker
+
+Once you have the wrapped key as a bytes literal you can store it (without the `b` prefix) as a constant.
 
 ```lookml
 constant: key_resource_uri {
@@ -108,9 +111,11 @@ constant: wrapped_key {
 }
 ```
 
+### Decrypting the data in the view with LookML
+
 Once these have been defined, you can reference them in your `view` file.
 
-> **Note**  We're passing the wrapped key content as a byte literal to BigQuery, hence the `b` prefix before the reference to the wrapped key.
+> **Note**  We're passing the wrapped key content as a bytes literal to BigQuery, hence the `b` prefix before the reference to the wrapped key.
 
 ```lookml
 dimension: name {
