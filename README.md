@@ -27,7 +27,9 @@ gcloud kms keys create $KEY_NAME \
 
 ## Generating the wrapped key
 
-There are multiple ways of doing this, but we'll use the `tinkey` utility for that. Follow the instructions [here](https://developers.google.com/tink/install-tinkey) to install it. Once it's installed run the following command to generate the wrapped key. This is a one-off process.
+There are multiple ways of doing this, but we'll use the `tinkey` utility. Follow the instructions [here](https://developers.google.com/tink/install-tinkey) to install it. Once it's installed run the following command to generate the wrapped key. This is typically a one-off process.
+
+> **Note**  Although generating the wrapped key is a one-off process, uou might need to rotate it to improve your security, see section [Rotating keys](#rotating_keys) below for detailed instructions on that.
 
 ```shell
 KEK_URI=`gcloud kms keys describe \
@@ -35,10 +37,10 @@ KEK_URI=`gcloud kms keys describe \
     --keyring=$KEY_RING $KEY_NAME \
     --format="value(name)"`
 tinkey create-keyset \
-    --key-template AES256_SIV \
-    --out-format json \
-    --out wrapped_key.json \
-    --master-key-uri "$KEK_URI"
+    --key-template=AES256_SIV \
+    --out-format=json \
+    --out=wrapped_key.json \
+    --master-key-uri="gcp-kms://$KEK_URI"
 ```
 
 ## Using the wrapped key for encyrption
@@ -51,22 +53,22 @@ In this example we've prepared a sample Python script that you can run from the 
 PROJECT_ID=
 BQ_DATASET=...
 BQ_TABLE=...
-bq mk --location=$REGION --dataset $PROJECT_ID:$BQ_DATASET
-bq mk --table $PROJECT_ID:$BQ_DATASET.$BQ_TABLE id:STRING,name:BYTES
+bq mk --location=$REGION --dataset "$PROJECT_ID:$BQ_DATASET"
+bq mk --table "$PROJECT_ID:$BQ_DATASET.$BQ_TABLE" "id:STRING,name:BYTES"
 ```
 
 Once the table is there, you can insert some encrypted sample data:
 
 ```shell
 python3 -m venv .venv
-. .venv/bin/activate
+source .venv/bin/activate
 pip install -r requirements.txt
 python encrypt.py \
-    --project $PROJECT_ID \
-    --dataset $BQ_DATASET \
-    --table $BQ_TABLE \
-    --wrapped-key-path wrapped_key.json \
-    --kek-uri $KEK_URI
+    --project=$PROJECT_ID \
+    --dataset=$BQ_DATASET \
+    --table=$BQ_TABLE \
+    --wrapped-key-path=wrapped_key.json \
+    --kek-uri=$KEK_URI
 ```
 
 In order to view the encrypted data you can run a SQL query:
@@ -108,7 +110,7 @@ constant: wrapped_key {
 
 Once these have been defined, you can reference them in your `view` file.
 
-> **Note** We're passing the wrapped key content as a byte literal to BigQuery, hence the `b` prefix before the reference to the wrapped key.
+> **Note**  We're passing the wrapped key content as a byte literal to BigQuery, hence the `b` prefix before the reference to the wrapped key.
 
 ```lookml
 dimension: name {
@@ -133,9 +135,11 @@ Now when the contents for the `name` column are displayed, the data will be auto
 
 ## Rotating the keys
 
-For symmetric encryption, periodically and automatically rotating keys is a recommended and in some cases even required security practice. Since we're using wrapped keys, this process involves rotating both the KEK and the wrapped key.
+For symmetric encryption, periodically and automatically rotating keys is a recommended, and in some cases even required, security practice. Since we're using wrapped keys, this process involves rotating both the KEK and the wrapped key.
 
-### Rotate the KEK 
+### Rotate the KEK
+
+Rotating the KEK is a simple process, you need to create a new version of the key and promote that to be the primary so that whenever that key is used the latest version is used. Keep in mind the command below doesn't automatically disable or destroy the old keys, those are still accessible for decrypting data that has been encoded with the older version of the key. You might want to schedule destroying/disabling those versions once everything that has been encrypted with those versions have been re-encrypted with the new version. It's also possible to schedule automatic rotation of the KEK. For more information on key rotation, have a look at the [relevant parts of the Cloud KMS documentation](https://cloud.google.com/kms/docs/rotate-key).
 
 ```shell
 gcloud kms keys versions create \
@@ -147,19 +151,23 @@ gcloud kms keys versions create \
 
 ### Rotate the wrapped key
 
+Next step is to re-create a new DEK and wrap it with the new KEK. Fortunately `tinkey` utility provides a command to rotate the wrapped key. Note that the rotated key will still contain the older version of the wrapped key as well so that you can still decrypt old data. Any encryption on new data will be done with the latest version of the wrapped key.
+
 ```shell
 tinkey rotate-keyset \
-    --key-template AES256_SIV \
-    --in-format json \
-    --in wrapped_key.json \
-    --out-format json \
-    --out rotated_wrapped_key.json \
-    --master-key-uri "$KEK_URI"
+    --key-template=AES256_SIV \
+    --in-format=json \
+    --in=wrapped_key.json \
+    --out-format=json \
+    --out=rotated_wrapped_key.json \
+    --master-key-uri="gcp-kms://$KEK_URI"
 ```
 
 You can now extract the rotated & wrapped key as described in section [extracting the wrapped key](#extracting-the-wrapped-key-contents-as-a-byte-literal).
 
 ### Re-encrypt the data
+
+Rotating a key doesn't change anything for the data that has been already encrypted. In order to make sure that this data cannot be decrypted anymore with the old keys you need to re-encrypt it.
 
 There are multiple methods to re-encrypt the data, varying from running the encryption code with the new key on the original data, to decrypting with the old key and re-encrypting with the new key as the rotating the key keeps a reference to the old key (until the old one is disabled/destroyed). The snippet below is an example of how to do this in BigQuery with SQL.
 
@@ -170,6 +178,7 @@ DECLARE encrypted_content BYTES;
 SET kek_resource_uri = "gcp-kms://projects/.../locations/.../keyRings/.../cryptoKeys/...";
 SET wrapped_key_bytes = FROM_BASE64("....");  -- or the bytes literal as used in Looker
 
+-- Replace the $variables with the corresponding values before running
 UPDATE `$BQ_DATASET.$BQ_TABLE` SET name = DETERMINISTIC_ENCRYPT(
             KEYS.KEYSET_CHAIN(kek_resource_uri, wrapped_key_bytes), 
             DETERMINISTIC_DECRYPT_STRING(KEYS.KEYSET_CHAIN(kek_resource_uri, wrapped_key_bytes), name, ''), 
